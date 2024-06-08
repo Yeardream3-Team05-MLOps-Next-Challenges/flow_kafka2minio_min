@@ -1,0 +1,33 @@
+name: Prefect flow CI/CD
+
+on:
+  push:
+    branches:
+      - test 
+
+
+jobs:
+
+  build:
+    name: Build
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        arch: [ arm64 ]
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v2
+      with:
+        platforms: arm64
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image
+      run: docker buildx build --platform linux/${{ matrix.arch }} --load -t myapp:latest .
+
+    - name: Run Docker container
+      run: docker run -d myapp:latest
