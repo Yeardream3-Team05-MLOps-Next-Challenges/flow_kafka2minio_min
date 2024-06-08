@@ -1,6 +1,6 @@
 prefect==2.18.3
 requests==2.31.0
-spark==2.4.0
+pyspark==3.4.3
 confluent_kafka==2.4.0
 pandas==2.2.2
 httpx
