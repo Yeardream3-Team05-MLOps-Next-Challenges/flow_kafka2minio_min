@@ -109,7 +109,7 @@ def min_kafka2minio_flow(topic_name, kafka_url, spark_url, minio_url):
     write_minio(kafka_data, spark_url, minio_url)
 
 if __name__ == "__main__":
-    topic_name = 'ttmin'
+    topic_name = os.getenv("TOPIC_NAME")
     kafka_url = os.getenv("KAFKA_URL")
     spark_url = os.getenv("SPARK_URL")
     minio_url = os.getenv("MINIO_URL")

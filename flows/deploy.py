@@ -17,6 +17,7 @@ if __name__ == "__main__":
             dockerfile="Dockerfile",
             platform="linux/arm64",
             buildargs={
+                       "TOPIC_NAME": os.getenv("TOPIC_NAME"),
                        "KAFKA_URL": os.getenv("KAFKA_URL"),
                        "SPARK_URL": os.getenv("SPARK_URL"),
                        "MINIO_URL": os.getenv("MINIO_URL"),
