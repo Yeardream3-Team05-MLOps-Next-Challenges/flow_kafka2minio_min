@@ -104,7 +104,7 @@ def write_minio(data_source, spark_url, minio_url):
         spark.stop()
 
 @flow
-def min_kafka2minio_flow(topic_name, kafka_url, spark_url, minio_url):
+def hun_min_kafka2minio_flow(topic_name, kafka_url, spark_url, minio_url):
     kafka_data = read_kafka(topic_name, kafka_url)
     write_minio(kafka_data, spark_url, minio_url)
 
@@ -114,4 +114,4 @@ if __name__ == "__main__":
     spark_url = os.getenv("SPARK_URL")
     minio_url = os.getenv("MINIO_URL")
 
-    min_kafka2minio_flow(topic_name, kafka_url, spark_url, minio_url)
+    hun_min_kafka2minio_flow(topic_name, kafka_url, spark_url, minio_url)
