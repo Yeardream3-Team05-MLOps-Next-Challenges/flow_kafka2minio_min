@@ -18,8 +18,13 @@ ENV MINIO_PATH=${MINIO_PATH}
 
 COPY requirements.txt .
 
-RUN python -m pip install --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+RUN apt-get update && apt-get install -y openjdk-17-jdk procps \
+    && python -m pip install --upgrade pip\
+    && pip install --no-cache-dir -r requirements.txt \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV JAVA_HOME /usr/lib/jvm/java-17-openjdk-arm64
 
 COPY . /opt/prefect/flows
 
