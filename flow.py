@@ -73,32 +73,36 @@ def read_kafka(topic_name, kafka_url):
 
 
 @task
-def write_minio(data_source, spark_url, minio_url):
-
+def write_minio(data_source, spark_url, minio_url, minio_access_key, minio_secret_key, minio_path):
     spark = SparkSession \
         .builder \
         .appName("tick_to_min") \
         .master(spark_url) \
-        .config('spark.jars.packages', 'org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.3') \
+        .config('spark.jars.packages', 'org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.3,org.apache.hadoop:hadoop-aws:3.3.1') \
         .config('spark.sql.streaming.checkpointLocation', '/tmp/checkpoint/tick_to_min') \
+        .config("spark.hadoop.fs.s3a.endpoint", minio_url) \
+        .config("spark.hadoop.fs.s3a.access.key", minio_access_key) \
+        .config("spark.hadoop.fs.s3a.secret.key", minio_secret_key) \
+        .config("spark.hadoop.fs.s3a.path.style.access", "true") \
+        .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
         .getOrCreate()
 
     try:
         # Pandas DataFrame을 Spark DataFrame으로 변환
         df = spark.createDataFrame(data_source)
-
         df = df.withColumn('window_start', to_timestamp(df['window_start']))
-
-        # '년', '월' 컬럼 추가
+        # '년', '월', '일' 컬럼 추가
         df = df.withColumn('year', year(df['window_start']))
         df = df.withColumn('month', month(df['window_start']))
         df = df.withColumn('day', dayofmonth(df['window_start']))
 
+        # MinIO에 쓰기 (s3a 프로토콜 사용)
         df.write \
         .option("maxRecordsPerFile", 100000) \
         .partitionBy('stock_code', 'year', 'month', 'day') \
         .mode("append") \
-        .parquet(minio_url)
+        .parquet(minio_path)
+
     finally:
         # SparkSession 종료
         spark.stop()
@@ -110,9 +114,12 @@ def hun_min_kafka2minio_flow():
     kafka_url = os.getenv("KAFKA_URL")
     spark_url = os.getenv("SPARK_URL")
     minio_url = os.getenv("MINIO_URL")
+    minio_access_key = os.getenv("MINIO_ACCESS_KEY")
+    minio_secret_key = os.getenv("MINIO_SECRET_KEY")
+    minio_path = os.getenv("MINIO_PATH")
 
     kafka_data = read_kafka(topic_name, kafka_url)
-    write_minio(kafka_data, spark_url, minio_url)
+    write_minio(kafka_data, spark_url, minio_url, minio_access_key, minio_secret_key, minio_path)
 
 if __name__ == "__main__":
 
