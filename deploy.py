@@ -13,7 +13,7 @@ if __name__ == "__main__":
         work_queue_name="docker-agent",
         image=DeploymentImage(
             name="hun-min-kafka2minio",
-            tag="0.1.1",
+            tag="0.1.2",
             dockerfile="Dockerfile",
             platform="linux/arm64",
             buildargs={
@@ -26,6 +26,6 @@ if __name__ == "__main__":
                        "MINIO_PATH" : os.getenv("MINIO_PATH"),
                        },
         ),
-        schedule=(CronSchedule(cron="0 22 * * *", timezone="Asia/Seoul")),
+        schedule=(CronSchedule(cron="0 22 * * 1-5", timezone="Asia/Seoul")),
         build=True,
     )
