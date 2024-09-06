@@ -2,12 +2,22 @@ import os
 import time
 import json
 import pandas as pd
+import logging
 from confluent_kafka import Consumer, TopicPartition
 
-from prefect import task, flow
+from prefect import task, flow, get_run_logger
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, to_timestamp, year, month, dayofmonth
+
+# 로깅 설정
+def get_logger():
+    try:
+        return get_run_logger()
+    except Exception:
+        logging.basicConfig(level=logging.INFO)
+        return logging.getLogger(__name__)
+logger = get_logger()
 
 @task
 def read_kafka(topic_name, kafka_url):
@@ -37,11 +47,11 @@ def read_kafka(topic_name, kafka_url):
             if msg is None:
                 if time.time() - last_message_time > timeout_seconds:
                     # 마지막 메시지 받은 후 지정된 시간이 지났으면 루프 종료
-                    print("새로운 데이터가 없어 프로그램을 종료합니다.")
+                    logger.info("새로운 데이터가 없어 프로그램을 종료합니다.")
                     break
                 continue
             if msg.error():
-                print(msg.error())
+                logger.error(msg.error())
                 break
 
             # 메시지를 받으면 마지막 메시지 시간을 갱신
@@ -69,11 +79,15 @@ def read_kafka(topic_name, kafka_url):
     # 데이터프레임으로 변환
     df = pd.DataFrame(data)
 
+    logger.info(f"Finished reading {len(df)} records from Kafka")
     return df
 
 
 @task
 def write_minio(data_source, spark_url, minio_url, minio_access_key, minio_secret_key, minio_path):
+    global logger
+    logger.info("Starting to write data to MinIO")
+
     spark = SparkSession \
         .builder \
         .appName("tick_to_min") \
@@ -103,6 +117,8 @@ def write_minio(data_source, spark_url, minio_url, minio_access_key, minio_secre
         .mode("append") \
         .parquet(minio_path)
 
+
+        logger.info(f"Successfully write {df.count()} records to MinIO")
     finally:
         # SparkSession 종료
         spark.stop()

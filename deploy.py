@@ -13,7 +13,7 @@ if __name__ == "__main__":
         work_queue_name="docker-agent",
         image=DeploymentImage(
             name="hun-min-kafka2minio",
-            tag="0.1.2",
+            tag="0.1.3",
             dockerfile="Dockerfile",
             platform="linux/arm64",
             buildargs={
