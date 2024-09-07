@@ -1,4 +1,4 @@
-FROM prefecthq/prefect:2.18.3-python3.10
+FROM prefecthq/prefect:2.18.3-python3.12
 
 ARG TOPIC_NAME
 ARG KAFKA_URL
