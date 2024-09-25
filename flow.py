@@ -64,7 +64,7 @@ def read_kafka(topic_name, kafka_url):
                 tp = TopicPartition(topic_name, partition.partition, current_offset)
                 consumer.seek(tp)
                 
-               while current_offset < end_offset:
+                while current_offset < end_offset:
                     msg = consumer.poll(1.0)
                     if msg is None:
                         continue
