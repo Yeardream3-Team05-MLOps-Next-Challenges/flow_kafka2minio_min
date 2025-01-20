@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "flow-kafka2minio-min"
-version = "0.1.1"
+version = "0.1.2"
 description = ""
 authors = ["Your Name <you@example.com>"]
 readme = "README.md"
@@ -12,6 +12,7 @@ requests = "^2.32.3"
 pyspark = "3.4.3"
 confluent-kafka = "^2.8.0"
 pandas = "^2.2.3"
+pytest = "^8.3.4"
 
 
 [build-system]
