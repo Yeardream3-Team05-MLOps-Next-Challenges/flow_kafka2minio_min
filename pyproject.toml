@@ -13,6 +13,7 @@ pyspark = "3.4.3"
 confluent-kafka = "^2.8.0"
 pandas = "^2.2.3"
 pytest = "^8.3.4"
+griffe = "==0.*"
 
 
 [build-system]
