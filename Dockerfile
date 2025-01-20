@@ -5,12 +5,18 @@ ARG TOPIC_NAME
 ARG KAFKA_URL
 ARG SPARK_URL
 ARG MINIO_URL
+<<<<<<< HEAD
 ARG MINIO_ACCESS_KEY
 ARG MINIO_SECRET_KEY
 ARG MINIO_PATH
 
 ENV PREFECT_LOGGING_LEVEL=${LOGGING_LEVEL}
 ENV LOGGING_LEVEL=${LOGGING_LEVEL}
+=======
+ARG VERSION
+
+ENV VERSION=$VERSION
+>>>>>>> test
 ENV TOPIC_NAME=${TOPIC_NAME}
 ENV KAFKA_URL=${KAFKA_URL}
 ENV SPARK_URL=${SPARK_URL}
@@ -19,11 +25,17 @@ ENV MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
 ENV MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
 ENV MINIO_PATH=${MINIO_PATH}
 
-COPY requirements.txt .
+COPY pyproject.toml poetry.lock* ./
 
 RUN apt-get update && apt-get install -y openjdk-17-jdk procps \
     && python -m pip install --upgrade pip\
+<<<<<<< HEAD
     && pip install --no-cache-dir -r requirements.txt \
+=======
+    && pip install --no-cache-dir poetry \
+    && poetry config virtualenvs.create false \
+    && poetry install --no-root \
+>>>>>>> test
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

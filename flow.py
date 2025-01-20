@@ -1,4 +1,5 @@
 import os
+<<<<<<< HEAD
 import time
 import json
 import pandas as pd
@@ -7,6 +8,12 @@ from confluent_kafka import Consumer, TopicPartition
 from prefect import task, flow, get_run_logger
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, to_timestamp, year, month, dayofmonth
+=======
+from prefect import task, flow
+
+from src.logger import get_logger, setup_logging
+from src.logic import read_kafka_logic, write_minio_logic
+>>>>>>> test
 
 # Prefect 환경 여부를 확인하는 함수
 def is_prefect_env():
@@ -29,6 +36,7 @@ def get_logger():
 
 @task
 def read_kafka(topic_name, kafka_url):
+<<<<<<< HEAD
     logger = get_logger()
     logger.info(f"Attempting to read from Kafka topic: {topic_name}")
 
@@ -144,6 +152,22 @@ def write_minio(data_source, spark_url, minio_url, minio_access_key, minio_secre
 @flow
 def hun_min_kafka2minio_flow():
     logger = get_logger()
+=======
+    """Kafka에서 데이터를 읽어오는 Prefect 태스크."""
+    return read_kafka_logic(topic_name, kafka_url)
+
+@task
+def write_minio(data_source, spark_url, minio_url):
+    """MinIO에 데이터를 쓰는 Prefect 태스크."""
+    write_minio_logic(data_source, spark_url, minio_url)
+
+
+@flow
+def hun_min_kafka2minio_flow():
+    """전체 데이터 처리 플로우를 정의하는 Prefect 플로우."""
+    setup_logging()
+    
+>>>>>>> test
     topic_name = os.getenv("TOPIC_NAME")
     kafka_url = os.getenv("KAFKA_URL")
     spark_url = os.getenv("SPARK_URL")
@@ -172,6 +196,7 @@ def hun_min_kafka2minio_flow():
     finally:
         consumer.close()
         logger.info("Kafka consumer closed")
+
 
 
 if __name__ == "__main__":

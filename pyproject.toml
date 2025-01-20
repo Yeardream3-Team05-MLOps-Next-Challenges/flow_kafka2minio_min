@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "flow-kafka2minio-min"
+version = "0.1.4"
+description = ""
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "==3.10.*"
+prefect = "2.18.3"
+requests = "^2.32.3"
+pyspark = "3.4.3"
+confluent-kafka = "^2.8.0"
+pandas = "^2.2.3"
+pytest = "^8.3.4"
+griffe = "==0.*"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
