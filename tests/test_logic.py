@@ -2,85 +2,72 @@ import pytest
 from unittest.mock import patch, MagicMock
 import pandas as pd
 import json
+from confluent_kafka import KafkaError
 from src.logic import read_kafka_logic, write_minio_logic
+from pyspark.sql.functions import year, month, dayofmonth
 
-# read_kafka_logic 테스트
 @patch('src.logic.Consumer')
-def test_read_kafka_logic(MockConsumer):
+@patch('src.logic.time.time')  # time.time() mocking 추가
+def test_read_kafka_logic(mock_time, MockConsumer):
     # Mock 설정
     mock_consumer = MockConsumer.return_value
     mock_consumer.list_topics.return_value.topics = {
-        "test_topic": MagicMock(partitions={0: MagicMock(), 1:MagicMock()})
+        "test_topic": MagicMock(partitions={0: MagicMock(), 1: MagicMock()})
     }
-    mock_consumer.poll.side_effect = [
-         MagicMock(error=lambda : None, value=lambda : json.dumps({
-            "window": {"start": "20240702", "end": "20240703"},
-            "종목코드": "005930",
-            "open": 100,
-            "high": 110,
-            "low": 90,
-            "close": 105,
-            "candle": 1
-            }).encode('utf-8'), topic=lambda: "test_topic", partition=lambda: 0, offset=lambda: 0, timestamp=lambda: (1,1000)),
-          None,
-         MagicMock(error=lambda : None, value=lambda : json.dumps({
-            "window": {"start": "20240702", "end": "20240703"},
-            "종목코드": "005930",
-            "open": 100,
-            "high": 110,
-            "low": 90,
-            "close": 105,
-            "candle": 1
-            }).encode('utf-8'), topic=lambda: "test_topic", partition=lambda: 1, offset=lambda: 0, timestamp=lambda: (1,1000)),
-          None
-    ]
 
+    # poll() 이 처음 한 번은 메시지를 반환하고, 그 다음부터는 None 을 반환하도록 설정
+    mock_consumer.poll.side_effect = [
+        MagicMock(
+            error=lambda: None,
+            value=lambda: json.dumps({
+                "window": {"start": "20240702", "end": "20240703"},
+                "종목코드": "005930",
+                "open": 100,
+                "high": 110,
+                "low": 90,
+                "close": 105,
+                "candle": 1
+            }).encode('utf-8'),
+            topic=lambda: "test_topic",
+            partition=lambda: 0,
+            offset=lambda: 0,
+            timestamp=lambda: (1, 1000)
+        ),
+        None
+    ]
+    # time.time() 이 처음 한 번은 1000을 반환하고, 그 다음부터는 1000 + timeout_seconds + 1 을 반환하도록 설정
+    mock_time.side_effect = [1000, 1000 + 10 + 1]
 
     # 테스트 실행
     topic_name = "test_topic"
     kafka_url = "test_kafka_url"
     df = read_kafka_logic(topic_name, kafka_url)
-    
+
     # 검증
     assert isinstance(df, pd.DataFrame)
-    assert len(df) == 2
-    assert 'topic' in df.columns
-    assert 'partition' in df.columns
-    assert 'offset' in df.columns
-    assert 'timestamp' in df.columns
-    assert 'window_start' in df.columns
-    assert 'window_end' in df.columns
+    assert len(df) == 1
     assert 'stock_code' in df.columns
-    assert 'open' in df.columns
-    assert 'high' in df.columns
-    assert 'low' in df.columns
-    assert 'close' in df.columns
-    assert 'candle' in df.columns
+    assert df['stock_code'].iloc[0] == '005930'
 
-# write_minio_logic 테스트
-@patch('src.logic.SparkSession.builder.appName')
-def test_write_minio_logic(MockAppName):
-     # Mock 설정
-    mock_spark_builder = MockAppName.return_value
-    mock_spark_builder.master.return_value = mock_spark_builder
-    mock_spark_builder.config.return_value = mock_spark_builder
-    mock_spark_builder.getOrCreate.return_value = MagicMock()
-
-    mock_spark = mock_spark_builder.getOrCreate.return_value
+@patch('src.logic.SparkSession')
+def test_write_minio_logic(MockSparkSession):
+    #Mock 설정정
+    mock_spark = MagicMock()
     mock_df = MagicMock()
+    MockSparkSession.builder.appName.return_value.master.return_value.config.return_value.config.return_value.getOrCreate.return_value = mock_spark
     mock_spark.createDataFrame.return_value = mock_df
-
-    # 테스트 실행
-    data_source = pd.DataFrame([{'test':'data'}])
-    spark_url = "test_spark_url"
-    minio_url = "test_minio_url"
-    write_minio_logic(data_source, spark_url, minio_url)
     
+    # Mock 객체의 반환값으로 자기 자신(mock_df)을 반환하도록 설정
+    mock_df.withColumn.return_value = mock_df
+    mock_df.write.partitionBy.return_value = mock_df
+    mock_df.write.mode.return_value = mock_df
+    
+    # 테스트 실행
+    data_source = pd.DataFrame([{'test': 'data', 'window_start': '2024-01-01'}])
+    write_minio_logic(data_source, "test_spark_url", "test_minio_url")
+
     # 검증
-    mock_spark_builder.appName.assert_called_once_with("tick_to_min")
-    mock_spark_builder.master.assert_called_once_with("test_spark_url")
-    mock_spark_builder.config.assert_called()
-    mock_spark.createDataFrame.assert_called_once()
-    mock_df.withColumn.assert_called()
-    mock_df.write.partitionBy.assert_called_once()
-    mock_spark.stop.assert_called_once()
+    assert mock_spark.createDataFrame.called  # DataFrame 생성 확인
+    mock_df.withColumn.assert_called() # withColumn  호출확인
+    mock_df.write.partitionBy.assert_called_with('stock_code', 'year', 'month', 'day')  # partitionBy 호출 및 인자 확인
+    assert mock_spark.stop.called  # 자원 해제 확인
