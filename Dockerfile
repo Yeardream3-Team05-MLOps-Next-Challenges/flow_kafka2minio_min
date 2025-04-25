@@ -1,4 +1,4 @@
-FROM prefecthq/prefect:2.18.3-python3.12
+FROM prefecthq/prefect:2.18.3-python3.10
 
 ARG LOGGING_LEVEL
 ARG TOPIC_NAME
