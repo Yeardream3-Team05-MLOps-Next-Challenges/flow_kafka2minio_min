@@ -10,9 +10,9 @@ def read_kafka(topic_name, kafka_url):
     return read_kafka_logic(topic_name, kafka_url)
 
 @task
-def write_minio(data_source, spark_url, minio_url):
+def write_minio(data_source, spark_url, minio_url, minio_access_key, minio_secret_key, minio_path):
     """MinIO에 데이터를 쓰는 Prefect 태스크."""
-    write_minio_logic(data_source, spark_url, minio_url)
+    write_minio_logic(data_source, spark_url, minio_url, minio_access_key, minio_secret_key, minio_path)
 
 
 @flow
@@ -24,9 +24,12 @@ def hun_min_kafka2minio_flow():
     kafka_url = os.getenv("KAFKA_URL")
     spark_url = os.getenv("SPARK_URL")
     minio_url = os.getenv("MINIO_URL")
+    minio_access_key = os.getenv("MINIO_ACCESS_KEY")
+    minio_secret_key = os.getenv("MINIO_SECRET_KEY")
+    minio_path = os.getenv("MINIO_PATH")
 
     kafka_data = read_kafka(topic_name, kafka_url)
-    write_minio(kafka_data, spark_url, minio_url)
+    write_minio(kafka_data, spark_url, minio_url, minio_access_key, minio_secret_key, minio_path)
 
 
 if __name__ == "__main__":

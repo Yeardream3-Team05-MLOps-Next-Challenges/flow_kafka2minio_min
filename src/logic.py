@@ -10,7 +10,7 @@ from src.logger import get_logger
 
 def read_kafka_logic(topic_name, kafka_url):
     """Kafka에서 특정 기간(예: 오늘 하루)의 데이터를 읽어오는 순수 함수 """
-
+    
     logger = get_logger()
 
     # Consumer 설정
@@ -143,32 +143,68 @@ def read_kafka_logic(topic_name, kafka_url):
     logger.info("Pandas DataFrame으로 변환 완료.")
     return df
 
-def write_minio_logic(data_source, spark_url, minio_url):
+def write_minio_logic(data_source, spark_url, minio_url, minio_access_key, minio_secret_key, minio_path):
     """MinIO에 데이터를 쓰는 순수 함수."""
-    spark = SparkSession \
-        .builder \
-        .appName("tick_to_min") \
-        .master(spark_url) \
-        .config('spark.jars.packages', 'org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.3') \
-        .config('spark.sql.streaming.checkpointLocation', '/tmp/checkpoint/tick_to_min') \
-        .getOrCreate()
+    logger = get_logger()
+    spark = None
 
     try:
+        logger.info("SparkSession 생성을 시작합니다 (MinIO 설정 포함)...")
+
+        spark = SparkSession \
+            .builder \
+            .appName("kafk2minio") \
+            .master(spark_url) \
+            .config('spark.jars.packages', 'org.apache.hadoop:hadoop-aws:3.4.3,com.amazonaws:aws-java-sdk-bundle:1.12.262') \
+            .config('spark.hadoop.fs.s3a.endpoint', minio_url) \
+            .config('spark.hadoop.fs.s3a.access.key', minio_access_key) \
+            .config('spark.hadoop.fs.s3a.secret.key', minio_secret_key) \
+            .config('spark.hadoop.fs.s3a.path.style.access', 'true') \
+            .config('spark.hadoop.fs.s3a.impl', 'org.apache.hadoop.fs.s3a.S3AFileSystem') \
+            .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false" if minio_url.startswith("http://") else "true") \
+            .config('spark.sql.streaming.checkpointLocation', '/tmp/checkpoint/kafk2minio') \
+            .getOrCreate()
+
+        logger.info("SparkSession 생성 완료.")
+
         # Pandas DataFrame을 Spark DataFrame으로 변환
-        df = spark.createDataFrame(data_source)
+        logger.info("Pandas DataFrame을 Spark DataFrame으로 변환합니다...")
+        spark_df = spark.createDataFrame(data_source)
+        logger.info("Spark DataFrame 변환 완료.")
 
-        df = df.withColumn('window_start', to_timestamp(df['window_start']))
+        # Spark DataFrame 변환 및 파티션 컬럼 추가
+        logger.info("파티션 컬럼 추가 및 데이터 변환 시작...")
+        try:
+            transformed_df = spark_df \
+                .withColumn("window_start_ts", to_timestamp(col("window_start"), "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")) \
+                .withColumn("year", year(col("window_start_ts"))) \
+                .withColumn("month", month(col("window_start_ts"))) \
+                .withColumn("day", dayofmonth(col("window_start_ts")))
 
-        # '년', '월' 컬럼 추가
-        df = df.withColumn('year', year(df['window_start']))
-        df = df.withColumn('month', month(df['window_start']))
-        df = df.withColumn('day', dayofmonth(df['window_start']))
+            # 불필요한 컬럼 제거 
+            final_df = transformed_df.drop("window_start", "window_start_ts", "topic", "partition", "offset", "timestamp") 
+            logger.info("데이터 변환 완료.")
+            final_df.printSchema() 
 
-        df.write \
-        .option("maxRecordsPerFile", 100000) \
-        .partitionBy('stock_code', 'year', 'month', 'day') \
-        .mode("append") \
-        .parquet(minio_url)
+        except Exception as e:
+                logger.error(f"Spark DataFrame 변환 중 오류: {e}", exc_info=True)
+                logger.error("데이터 변환 실패. 원본 DataFrame 스키마:")
+                spark_df.printSchema()
+                raise # 오류 재발생
+
+        # MinIO에 Parquet 형식으로 저장
+        logger.info(f"MinIO 경로 '{minio_path}'에 Parquet 파일 쓰기를 시작합니다...")
+        final_df.write \
+            .partitionBy('year', 'month', 'day', 'stock_code') \
+            .mode("overwrite") \
+            .parquet(minio_path)
+        logger.info("MinIO 쓰기 완료.")
+
+    except Exception as e:
+        logger.error(f"MinIO 쓰기 작업 중 오류 발생: {e}", exc_info=True)
+        raise 
     finally:
-        # SparkSession 종료
-        spark.stop()
+        if spark:
+            logger.info("SparkSession을 종료합니다.")
+            spark.stop()
+            logger.info("SparkSession 종료 완료.")
