@@ -155,7 +155,7 @@ def write_minio_logic(data_source, spark_url, minio_url, minio_access_key, minio
             .builder \
             .appName("kafk2minio") \
             .master(spark_url) \
-            .config('spark.jars.packages', 'org.apache.hadoop:hadoop-aws:3.4.3,com.amazonaws:aws-java-sdk-bundle:1.12.262') \
+            .config('spark.jars.packages', 'org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262') \
             .config('spark.hadoop.fs.s3a.endpoint', minio_url) \
             .config('spark.hadoop.fs.s3a.access.key', minio_access_key) \
             .config('spark.hadoop.fs.s3a.secret.key', minio_secret_key) \
