@@ -48,8 +48,8 @@ jobs:
           KAFKA_URL: ${{ secrets.KAFKA_URL }} 
           SPARK_URL: ${{ secrets.SPARK_URL }} 
           MINIO_URL: ${{ secrets.MINIO_URL }} 
-          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }} 
-          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }} 
+          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS }} 
+          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET }} 
           MINIO_PATH: ${{ vars.MINIO_PATH }} 
         run: python deploy.py
 
