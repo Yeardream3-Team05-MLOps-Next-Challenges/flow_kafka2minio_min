@@ -1,7 +1,7 @@
 import time
 import json
 import pandas as pd
-from confluent_kafka import Consumer, TopicPartition
+from confluent_kafka import Consumer, TopicPartition, KafkaError, OFFSET_BEGINNING
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, to_timestamp, year, month, dayofmonth
@@ -9,66 +9,138 @@ from pyspark.sql.functions import col, to_timestamp, year, month, dayofmonth
 from src.logger import get_logger
 
 def read_kafka_logic(topic_name, kafka_url):
-    """Kafka에서 데이터를 읽어오는 순수 함수."""
+    """Kafka에서 특정 기간(예: 오늘 하루)의 데이터를 읽어오는 순수 함수 """
+
     logger = get_logger()
 
     # Consumer 설정
     conf = {
         'bootstrap.servers': kafka_url,
-        'group.id': 'min_kafka2minio_flow',
-        'auto.offset.reset': 'earliest'
+        'group.id': 'min_kafka2minio_flow', 
+        'auto.offset.reset': 'earliest',
+        'enable.auto.commit': False 
     }
     consumer = Consumer(**conf)
-
-    # 토픽의 모든 파티션 조회
-    partitions = consumer.list_topics(topic_name).topics[topic_name].partitions.keys()
-    topic_partitions = [TopicPartition(topic_name, p) for p in partitions]
-
-    # 모든 파티션을 구독
-    consumer.assign(topic_partitions)
+    logger.info(f"Kafka Consumer 생성 완료. Group ID: {conf['group.id']}")
 
     data = []
+    processed_offsets = {} # 파티션별 처리된 마지막 오프셋 추적
+
     try:
-        last_message_time = time.time()  # 마지막 메시지를 받은 시간
-        timeout_seconds = 10  # 새로운 메시지가 없을 경우 종료할 때까지의 대기 시간(초)
+        logger.info(f"토픽 '{topic_name}'의 메타데이터를 가져옵니다...")
+        # 토픽 메타데이터 가져오기 (타임아웃 설정)
+        metadata = consumer.list_topics(topic_name, timeout=10)
+        if metadata.topics.get(topic_name) is None:
+            logger.error(f"토픽 '{topic_name}'을 찾을 수 없습니다.")
+            return pd.DataFrame(data) # 빈 DataFrame 반환
+        if metadata.topics[topic_name].error is not None:
+             logger.error(f"토픽 '{topic_name}' 메타데이터 오류: {metadata.topics[topic_name].error}")
+             return pd.DataFrame(data)
 
-        while True:
-            msg = consumer.poll(1.0)
+        partitions = list(metadata.topics[topic_name].partitions.keys())
+        if not partitions:
+            logger.warning(f"토픽 '{topic_name}'에 파티션이 없습니다.")
+            return pd.DataFrame(data)
+
+        topic_partitions = [TopicPartition(topic_name, p) for p in partitions]
+        logger.info(f"'{topic_name}' 토픽 파티션: {partitions}")
+
+        end_offsets = {}
+        logger.info("각 파티션의 현재 high watermark 오프셋을 가져옵니다...")
+        for p in topic_partitions:
+            try:
+                low, high = consumer.get_watermark_offsets(p, timeout=5, cached=False)
+                end_offsets[p.partition] = high
+                logger.info(f"  - 파티션 {p.partition}: low={low}, high={high}")
+                p.offset = OFFSET_BEGINNING 
+            except Exception as e:
+                 logger.error(f"파티션 {p.partition}의 watermark 오프셋 가져오기 실패: {e}")
+                 partitions.remove(p.partition)
+
+        # 유효한 파티션만 다시 필터링
+        topic_partitions = [tp for tp in topic_partitions if tp.partition in partitions]
+        if not topic_partitions:
+             logger.warning("오프셋을 가져올 수 있는 유효한 파티션이 없습니다.")
+             return pd.DataFrame(data)
+
+        logger.info(f"파티션 할당 및 읽기 시작: {[(tp.partition, tp.offset) for tp in topic_partitions]}")
+        consumer.assign(topic_partitions) # 읽을 파티션과 시작 오프셋 지정
+
+        active_partitions = set(partitions) # 아직 high watermark에 도달하지 않은 파티션 집합
+        poll_timeout = 5.0 
+        no_message_streak = 0 
+        max_no_message_streak = 5 
+
+        logger.info("메시지 읽기 루프 시작...")
+        while active_partitions:
+            msg = consumer.poll(poll_timeout)
+
             if msg is None:
-                if time.time() - last_message_time > timeout_seconds:
-                    # 마지막 메시지 받은 후 지정된 시간이 지났으면 루프 종료
-                    logger.info("새로운 데이터가 없어 프로그램을 종료합니다.")
-                    break
+                no_message_streak += 1
+                logger.debug(f"메시지 없음 (연속 {no_message_streak}회). 남은 활성 파티션: {len(active_partitions)}")
+                if no_message_streak >= max_no_message_streak:
+                     logger.warning(f"{poll_timeout * max_no_message_streak}초 동안 메시지가 없어 읽기를 중단합니다. 일부 데이터가 누락될 수 있습니다.")
+                     break
                 continue
+
+            no_message_streak = 0 
+
             if msg.error():
-                print(msg.error())
-                break
+                # EOF 에러는 파티션 끝에 도달했다는 의미이므로 무시 가능
+                if msg.error().code() == KafkaError._PARTITION_EOF:
+                    logger.info(f"파티션 {msg.partition()}의 끝(EOF)에 도달했습니다.")
+                    continue
+                else:
+                    logger.error(f"Kafka Consume 오류: {msg.error()}")
+                    break
 
-            # 메시지를 받으면 마지막 메시지 시간을 갱신
-            last_message_time = time.time()
             # 메시지 처리
-            value = json.loads(msg.value().decode('utf-8'))
-            data.append({
-                'topic': msg.topic(),
-                'partition': msg.partition(),
-                'offset': msg.offset(),
-                'timestamp': msg.timestamp()[1],
-                'window_start': value['window']['start'],
-                'window_end': value['window']['end'],
-                'stock_code': value['종목코드'],  # '종목코드'에 맞게 수정
-                'open': value['open'],
-                'high': value['high'],
-                'low': value['low'],
-                'close': value['close'],
-                'candle': value['candle'],
-            })
+            partition = msg.partition()
+            offset = msg.offset()
+            logger.debug(f"메시지 수신: 파티션={partition}, 오프셋={offset}")
 
+            try:
+                value = json.loads(msg.value().decode('utf-8'))
+                data.append({
+                    'topic': msg.topic(),
+                    'partition': partition,
+                    'offset': offset,
+                    'timestamp': msg.timestamp()[1], 
+                    'window_start': value['window']['start'],
+                    'window_end': value['window']['end'],
+                    'stock_code': value['종목코드'],
+                    'open': value['open'],
+                    'high': value['high'],
+                    'low': value['low'],
+                    'close': value['close'],
+                    'candle': value['candle'],
+                })
+                processed_offsets[partition] = offset 
+            except json.JSONDecodeError as e:
+                logger.warning(f"JSON 파싱 오류 (오프셋 {offset}): {e} - 메시지 건너<0xEB><0x9A><0x8D>")
+            except Exception as e:
+                logger.error(f"메시지 처리 중 오류 (오프셋 {offset}): {e}", exc_info=True)
+
+            # 해당 파티션이 high watermark에 도달했는지 확인
+            if partition in end_offsets and offset >= end_offsets[partition] - 1:
+                logger.info(f"파티션 {partition}이(가) 목표 오프셋({end_offsets[partition]})에 도달했습니다.")
+                active_partitions.discard(partition) 
+
+        logger.info("메시지 읽기 루프 종료.")
+
+    except Exception as e:
+        logger.error(f"Kafka 읽기 중 예외 발생: {e}", exc_info=True)
     finally:
+        logger.info("Kafka Consumer를 닫습니다.")
         consumer.close()
+
+    logger.info(f"총 {len(data)}개의 메시지를 읽었습니다.")
+    if not data:
+        return pd.DataFrame() 
 
     # 데이터프레임으로 변환
     df = pd.DataFrame(data)
-
+    logger.info("Pandas DataFrame으로 변환 완료.")
     return df
 
 def write_minio_logic(data_source, spark_url, minio_url):
